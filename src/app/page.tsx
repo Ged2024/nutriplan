@@ -28,12 +28,12 @@ const STEPS = [
   {
     n: 1,
     title: "Set up profiles",
-    body: "Add you and your partner with health conditions, dietary preferences, and a calorie goal.",
+    body: "Add a profile for everyone you cook for — you, family, anyone — with their health conditions, dietary preferences, and a calorie goal.",
   },
   {
     n: 2,
-    title: "Generate the week",
-    body: "Get a 7-day plan with breakfast, lunch, dinner, and snacks — calories tallied per meal and per day.",
+    title: "Generate your plan",
+    body: "Choose 1 day up to 2 weeks and get meals with recipes — calories tallied per meal and per day.",
   },
   {
     n: 3,
@@ -58,10 +58,10 @@ export default function HomePage() {
               <span className="text-brand-600">without the guesswork.</span>
             </h1>
             <p className="mt-5 text-lg text-stone-600">
-              NutriPlan builds a personalized one-week meal plan around your
-              health conditions, dietary preferences, and calorie goals. Two
-              profiles, balanced whole-food meals, calories counted, and a single
-              grocery list for the week.
+              NutriPlan builds personalized meal plans around your health
+              conditions, dietary preferences, and calorie goals. Add a profile
+              for everyone you cook for — balanced whole-food meals with recipes,
+              calories counted, and a single grocery list.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link

@@ -1,11 +1,16 @@
 import type {
+  CoupleDayPlan,
+  CoupleMeal,
+  CouplePlan,
   DietaryPreference,
   GeneratedMeal,
+  GenerationOptions,
   Ingredient,
   MealType,
   Profile,
   WeekPlan,
 } from "./types";
+import { MEAL_CALORIE_SPLIT } from "./constants";
 
 /**
  * Deterministic, realistic sample meal plans for demo/preview mode — no API
@@ -104,7 +109,7 @@ const BREAKFASTS: SampleMeal[] = [
     carbs: 40,
     fat: 8,
     prepMinutes: 5,
-    tags: ["vegetarian", "pescatarian", "nut_free"],
+    tags: ["carnivore", "vegetarian", "pescatarian", "nut_free"],
     ingredients: [
       i("Greek yogurt", 1, "cup", "dairy"),
       i("Strawberries", 0.5, "cup", "produce"),
@@ -136,7 +141,7 @@ const BREAKFASTS: SampleMeal[] = [
     carbs: 30,
     fat: 14,
     prepMinutes: 8,
-    tags: ["pescatarian", "dairy_free", "nut_free"],
+    tags: ["carnivore", "pescatarian", "dairy_free", "nut_free"],
     ingredients: [
       i("Rye bread", 2, "slice", "grains"),
       i("Smoked salmon", 3, "oz", "protein"),
@@ -207,7 +212,7 @@ const LUNCHES: SampleMeal[] = [
     carbs: 50,
     fat: 14,
     prepMinutes: 25,
-    tags: ["gluten_free", "dairy_free", "nut_free"],
+    tags: ["carnivore", "gluten_free", "dairy_free", "nut_free"],
     ingredients: [
       i("Chicken breast", 5, "oz", "protein"),
       i("Brown rice", 0.75, "cup", "grains"),
@@ -223,7 +228,7 @@ const LUNCHES: SampleMeal[] = [
     carbs: 32,
     fat: 18,
     prepMinutes: 20,
-    tags: ["pescatarian", "gluten_free", "dairy_free", "nut_free"],
+    tags: ["carnivore", "pescatarian", "gluten_free", "dairy_free", "nut_free"],
     ingredients: [
       i("Canned tuna", 4, "oz", "protein"),
       i("Green beans", 1, "cup", "produce"),
@@ -310,7 +315,7 @@ const DINNERS: SampleMeal[] = [
     carbs: 42,
     fat: 24,
     prepMinutes: 25,
-    tags: ["pescatarian", "gluten_free", "dairy_free", "nut_free"],
+    tags: ["carnivore", "pescatarian", "gluten_free", "dairy_free", "nut_free"],
     ingredients: [
       i("Salmon fillet", 6, "oz", "protein"),
       i("Quinoa", 0.75, "cup", "grains"),
@@ -327,7 +332,7 @@ const DINNERS: SampleMeal[] = [
     carbs: 48,
     fat: 20,
     prepMinutes: 35,
-    tags: ["gluten_free", "dairy_free", "nut_free"],
+    tags: ["carnivore", "gluten_free", "dairy_free", "nut_free"],
     ingredients: [
       i("Chicken breast", 6, "oz", "protein"),
       i("Sweet potato", 1, "whole", "produce"),
@@ -420,7 +425,7 @@ const SNACKS: SampleMeal[] = [
     carbs: 16,
     fat: 3,
     prepMinutes: 2,
-    tags: ["vegetarian", "pescatarian", "gluten_free", "nut_free"],
+    tags: ["carnivore", "vegetarian", "pescatarian", "gluten_free", "nut_free"],
     ingredients: [
       i("Greek yogurt", 0.75, "cup", "dairy"),
       i("Blueberries", 0.5, "cup", "produce"),
@@ -437,9 +442,29 @@ const POOLS: Record<MealType, SampleMeal[]> = {
 
 const MEAL_TYPES: MealType[] = ["breakfast", "lunch", "dinner", "snack"];
 
-/** A meal fits a profile if it satisfies every one of the profile's prefs. */
+/**
+ * A meal fits a profile if it satisfies every one of the profile's prefs.
+ * "omnivore" imposes no restriction, so it's always satisfied.
+ */
 function fits(meal: SampleMeal, prefs: DietaryPreference[]): boolean {
-  return prefs.every((p) => meal.tags.includes(p));
+  return prefs.every((p) => p === "omnivore" || meal.tags.includes(p));
+}
+
+/** Generic-but-plausible cooking steps derived from a sample meal. */
+function deriveInstructions(meal: SampleMeal): string[] {
+  const grain = meal.ingredients.find((x) => x.category === "grains")?.name;
+  const protein = meal.ingredients.find((x) => x.category === "protein")?.name;
+  const steps: string[] = [
+    `Prep the ingredients for ${meal.name.toLowerCase()}: rinse, chop, and measure everything out.`,
+  ];
+  if (grain) {
+    steps.push(`Cook the ${grain.toLowerCase()} according to package directions.`);
+  }
+  if (protein) {
+    steps.push(`Cook the ${protein.toLowerCase()} until done, seasoning lightly.`);
+  }
+  steps.push("Combine everything, adjust seasoning to taste, and serve.");
+  return steps;
 }
 
 function scaleMeal(
@@ -456,28 +481,43 @@ function scaleMeal(
     carbs: Math.round(meal.carbs * factor),
     fat: Math.round(meal.fat * factor),
     prepMinutes: meal.prepMinutes,
+    instructions: deriveInstructions(meal),
     ingredients: meal.ingredients,
   };
 }
 
-/** Build a realistic sample WeekPlan for the given profile and day count. */
-export function buildSamplePlan(profile: Profile, numDays: number): WeekPlan {
-  const prefs = profile.dietaryPreferences;
+function batchNote(meals: { mealType: MealType; name: string }[]): string {
+  const pick = (t: MealType) => meals.find((m) => m.mealType === t)?.name;
+  const names = [pick("breakfast"), pick("lunch"), pick("dinner")].filter(
+    Boolean,
+  );
+  return `Evening prep session: cook the components for ${names.join(
+    ", ",
+  )} together — batch the grains and proteins, portion into containers, and refrigerate so the next day's meals are ready to go.`;
+}
 
-  // Filter each slot to compatible meals; fall back to the full pool if a
-  // restrictive combo leaves a slot empty (always at least the ALL-tagged ones).
-  const pools: Record<MealType, SampleMeal[]> = {
+/** Filter each meal slot to compatible meals, falling back to the full pool. */
+function poolsFor(prefs: DietaryPreference[]): Record<MealType, SampleMeal[]> {
+  const pools = {
     breakfast: POOLS.breakfast.filter((m) => fits(m, prefs)),
     lunch: POOLS.lunch.filter((m) => fits(m, prefs)),
     dinner: POOLS.dinner.filter((m) => fits(m, prefs)),
     snack: POOLS.snack.filter((m) => fits(m, prefs)),
-  };
+  } as Record<MealType, SampleMeal[]>;
   for (const t of MEAL_TYPES) {
     if (pools[t].length === 0) pools[t] = POOLS[t];
   }
+  return pools;
+}
 
-  const days = Array.from({ length: numDays }, (_, d) => {
-    // Pick one meal per slot, rotating through the pool by day for variety.
+/** Build a realistic sample WeekPlan for a profile and generation options. */
+export function buildSamplePlan(
+  profile: Profile,
+  options: GenerationOptions,
+): WeekPlan {
+  const pools = poolsFor(profile.dietaryPreferences);
+
+  const days = Array.from({ length: options.days }, (_, d) => {
     const picks = MEAL_TYPES.map((type, slot) => {
       const pool = pools[type];
       return pool[(d + slot) % pool.length];
@@ -486,12 +526,15 @@ export function buildSamplePlan(profile: Profile, numDays: number): WeekPlan {
     const baseTotal = picks.reduce((sum, m) => sum + m.calories, 0);
     const factor = profile.targetCalories / baseTotal;
 
-    const meals = picks.map((m, slot) =>
-      scaleMeal(m, MEAL_TYPES[slot], factor),
-    );
+    const meals = picks.map((m, slot) => scaleMeal(m, MEAL_TYPES[slot], factor));
     const totalCalories = meals.reduce((sum, m) => sum + m.calories, 0);
 
-    return { day: d, meals, totalCalories };
+    return {
+      day: d,
+      meals,
+      totalCalories,
+      batchPrep: options.batchCooking ? batchNote(meals) : undefined,
+    };
   });
 
   return {
@@ -499,6 +542,74 @@ export function buildSamplePlan(profile: Profile, numDays: number): WeekPlan {
     profileName: profile.name,
     calorieGoal: profile.calorieGoal,
     targetCalories: profile.targetCalories,
+    cuisine: options.cuisine,
+    batchCooking: options.batchCooking,
+    generatedAt: new Date().toISOString(),
+    sample: true,
+    days,
+  };
+}
+
+/** Build a sample couples plan: shared dishes at two portion sizes. */
+export function buildSampleCouplePlan(
+  profiles: [Profile, Profile],
+  options: GenerationOptions,
+): CouplePlan {
+  // A shared dish must satisfy both people's dietary preferences.
+  const union = Array.from(
+    new Set([
+      ...profiles[0].dietaryPreferences,
+      ...profiles[1].dietaryPreferences,
+    ]),
+  );
+  const pools = poolsFor(union);
+
+  const days: CoupleDayPlan[] = Array.from(
+    { length: options.days },
+    (_, d) => {
+      const meals: CoupleMeal[] = MEAL_TYPES.map((mealType, slot) => {
+        const pool = pools[mealType];
+        const base = pool[(d + slot) % pool.length];
+        const portions = profiles.map((p) => {
+          const target = Math.round(
+            p.targetCalories * MEAL_CALORIE_SPLIT[mealType],
+          );
+          const f = target / base.calories;
+          return {
+            profileId: p.id,
+            profileName: p.name,
+            calories: target,
+            protein: Math.round(base.protein * f),
+            carbs: Math.round(base.carbs * f),
+            fat: Math.round(base.fat * f),
+            portion: `≈ ${target} kcal serving`,
+          };
+        });
+        return {
+          mealType,
+          name: base.name,
+          description: base.description,
+          instructions: deriveInstructions(base),
+          ingredients: base.ingredients,
+          portions,
+        };
+      });
+
+      return {
+        day: d,
+        meals,
+        batchPrep: options.batchCooking
+          ? batchNote(meals.map((m) => ({ mealType: m.mealType, name: m.name })))
+          : undefined,
+      };
+    },
+  );
+
+  return {
+    profileIds: [profiles[0].id, profiles[1].id],
+    profileNames: [profiles[0].name, profiles[1].name],
+    cuisine: options.cuisine,
+    batchCooking: options.batchCooking,
     generatedAt: new Date().toISOString(),
     sample: true,
     days,

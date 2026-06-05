@@ -50,6 +50,12 @@ export default function RootLayout({
               >
                 Grocery List
               </Link>
+              <Link
+                href="/favorites"
+                className="px-3 py-2 rounded-md hover:bg-stone-100 hover:text-stone-900 transition-colors"
+              >
+                Favorites
+              </Link>
             </nav>
           </div>
         </header>

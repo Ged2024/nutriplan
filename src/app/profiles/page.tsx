@@ -7,6 +7,7 @@ import { useApp } from "@/lib/store";
 import {
   CALORIE_GOALS,
   DIETARY_PREFERENCES,
+  GENDERS,
   HEALTH_CONDITIONS,
 } from "@/lib/constants";
 import type { Profile } from "@/lib/types";
@@ -149,6 +150,9 @@ function ProfileCard({
         <div>
           <h2 className="text-xl font-bold text-stone-900">{profile.name}</h2>
           <p className="mt-1 text-sm text-stone-500">
+            {GENDERS.find((g) => g.value === profile.gender)?.label ??
+              profile.gender}
+            {profile.age ? ` · age ${profile.age}` : ""} ·{" "}
             {goal?.label ?? profile.calorieGoal} ·{" "}
             <span className="font-mono">{profile.targetCalories} kcal/day</span>
           </p>

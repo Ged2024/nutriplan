@@ -4,10 +4,10 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useApp } from "@/lib/store";
 import { buildGroceryList, CATEGORY_LABELS } from "@/lib/grocery";
-import type { WeekPlan } from "@/lib/types";
+import type { CouplePlan, WeekPlan } from "@/lib/types";
 
 export default function GroceryListPage() {
-  const { hydrated, profiles, plans } = useApp();
+  const { hydrated, profiles, plans, couplePlans } = useApp();
   // Which profile ids to include; default to all that have a plan.
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -15,6 +15,11 @@ export default function GroceryListPage() {
   const profilesWithPlans = useMemo(
     () => profiles.filter((p) => plans[p.id]),
     [profiles, plans],
+  );
+
+  const coupleList: CouplePlan[] = useMemo(
+    () => Object.values(couplePlans),
+    [couplePlans],
   );
 
   const includedPlans: WeekPlan[] = useMemo(
@@ -26,11 +31,12 @@ export default function GroceryListPage() {
   );
 
   const grouped = useMemo(
-    () => buildGroceryList(includedPlans),
-    [includedPlans],
+    () => buildGroceryList(includedPlans, coupleList),
+    [includedPlans, coupleList],
   );
 
   const totalItems = grouped.reduce((n, g) => n + g.items.length, 0);
+  const hasAny = profilesWithPlans.length > 0 || coupleList.length > 0;
 
   if (!hydrated) {
     return (
@@ -40,7 +46,7 @@ export default function GroceryListPage() {
     );
   }
 
-  if (profilesWithPlans.length === 0) {
+  if (!hasAny) {
     return (
       <div className="mx-auto max-w-2xl px-4 sm:px-6 py-24 text-center">
         <div className="text-5xl" aria-hidden>
@@ -65,7 +71,10 @@ export default function GroceryListPage() {
 
   function downloadList() {
     const lines: string[] = ["NutriPlan — Grocery List"];
-    const names = includedPlans.map((p) => p.profileName).filter(Boolean);
+    const names = [
+      ...includedPlans.map((p) => p.profileName),
+      ...coupleList.map((c) => `${c.profileNames.join(" & ")} (couples)`),
+    ].filter(Boolean);
     if (names.length) lines.push(`For: ${names.join(", ")}`);
     lines.push("");
     for (const group of grouped) {

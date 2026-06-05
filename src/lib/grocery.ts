@@ -1,4 +1,10 @@
-import type { GroceryCategory, GroceryItem, WeekPlan } from "./types";
+import type {
+  CouplePlan,
+  GroceryCategory,
+  GroceryItem,
+  Ingredient,
+  WeekPlan,
+} from "./types";
 
 const CATEGORY_ORDER: GroceryCategory[] = [
   "produce",
@@ -36,26 +42,38 @@ function roundQty(n: number): number {
  */
 export function buildGroceryList(
   plans: WeekPlan[],
+  couplePlans: CouplePlan[] = [],
 ): { category: GroceryCategory; items: GroceryItem[] }[] {
   const merged = new Map<string, GroceryItem>();
+
+  const addIngredient = (ing: Ingredient) => {
+    const key = `${normalize(ing.name)}|${normalize(ing.unit)}`;
+    const existing = merged.get(key);
+    if (existing) {
+      existing.quantity = roundQty(existing.quantity + ing.quantity);
+    } else {
+      merged.set(key, {
+        name: ing.name.trim(),
+        quantity: roundQty(ing.quantity),
+        unit: ing.unit.trim(),
+        category: ing.category,
+      });
+    }
+  };
 
   for (const plan of plans) {
     for (const day of plan.days) {
       for (const meal of day.meals) {
-        for (const ing of meal.ingredients) {
-          const key = `${normalize(ing.name)}|${normalize(ing.unit)}`;
-          const existing = merged.get(key);
-          if (existing) {
-            existing.quantity = roundQty(existing.quantity + ing.quantity);
-          } else {
-            merged.set(key, {
-              name: ing.name.trim(),
-              quantity: roundQty(ing.quantity),
-              unit: ing.unit.trim(),
-              category: ing.category,
-            });
-          }
-        }
+        for (const ing of meal.ingredients) addIngredient(ing);
+      }
+    }
+  }
+
+  for (const plan of couplePlans) {
+    for (const day of plan.days) {
+      for (const meal of day.meals) {
+        // Shared dish — count its ingredients once.
+        for (const ing of meal.ingredients) addIngredient(ing);
       }
     }
   }

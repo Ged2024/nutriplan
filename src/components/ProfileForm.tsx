@@ -6,6 +6,8 @@ import {
   DIETARY_PREFERENCES,
   GENDERS,
   HEALTH_CONDITIONS,
+  MAX_AGE,
+  MIN_AGE,
 } from "@/lib/constants";
 import {
   getCalorieReference,
@@ -30,7 +32,14 @@ export interface ProfileFormValues {
   targetCalories: number;
 }
 
-function toggle<T>(list: T[], value: T): T[] {
+/** Toggle within a mutually-exclusive group: selecting one clears its siblings. */
+function applyExclusive<T>(list: T[], value: T, siblings: T[]): T[] {
+  if (list.includes(value)) return list.filter((v) => v !== value);
+  return [...list.filter((v) => !siblings.includes(v)), value];
+}
+
+/** Plain on/off toggle (for stackable options). */
+function toggleSimple<T>(list: T[], value: T): T[] {
   return list.includes(value)
     ? list.filter((v) => v !== value)
     : [...list, value];
@@ -74,11 +83,34 @@ export default function ProfileForm({
     }
   }
 
+  // Within a category (blood pressure / blood sugar / cholesterol), selecting
+  // one condition replaces the other — you can't have full + borderline at once.
+  function toggleHealth(value: HealthCondition) {
+    const grp = HEALTH_CONDITIONS.find((c) => c.value === value)!.group;
+    const siblings = HEALTH_CONDITIONS.filter((c) => c.group === grp).map(
+      (c) => c.value,
+    );
+    setHealthConditions((prev) => applyExclusive(prev, value, siblings));
+  }
+
+  // Base diets are mutually exclusive; free-from restrictions stack.
+  function toggleDiet(value: DietaryPreference) {
+    const d = DIETARY_PREFERENCES.find((x) => x.value === value)!;
+    if (d.group === "base") {
+      const bases = DIETARY_PREFERENCES.filter((x) => x.group === "base").map(
+        (x) => x.value,
+      );
+      setDietaryPreferences((prev) => applyExclusive(prev, value, bases));
+    } else {
+      setDietaryPreferences((prev) => toggleSimple(prev, value));
+    }
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return setError("Please enter a name.");
-    if (!Number.isFinite(age) || age < 13 || age > 100)
-      return setError("Please enter an age between 13 and 100.");
+    if (!Number.isFinite(age) || age < MIN_AGE || age > MAX_AGE)
+      return setError(`Please enter an age between ${MIN_AGE} and ${MAX_AGE}.`);
     if (!Number.isFinite(targetCalories) || targetCalories < 800)
       return setError("Calorie target must be at least 800 kcal.");
     onSave({
@@ -91,6 +123,27 @@ export default function ProfileForm({
       targetCalories: Math.round(targetCalories),
     });
   }
+
+  const dietButton = (d: (typeof DIETARY_PREFERENCES)[number]) => {
+    const active = dietaryPreferences.includes(d.value);
+    return (
+      <button
+        type="button"
+        key={d.value}
+        onClick={() => toggleDiet(d.value)}
+        className={`text-left rounded-lg border px-3 py-2 text-sm transition-colors ${
+          active
+            ? "border-brand-500 bg-brand-50 text-brand-800"
+            : "border-stone-300 hover:bg-stone-50"
+        }`}
+      >
+        <span className="font-medium">{d.label}</span>
+        <span className="block text-xs text-stone-500 mt-0.5">
+          {d.description}
+        </span>
+      </button>
+    );
+  };
 
   return (
     <form
@@ -118,12 +171,20 @@ export default function ProfileForm({
             </label>
             <input
               type="number"
-              min={13}
-              max={100}
+              min={MIN_AGE}
+              max={MAX_AGE}
               value={age}
               onChange={(e) => setAge(Number(e.target.value))}
+              onBlur={(e) => {
+                const v = Number(e.target.value);
+                if (Number.isFinite(v))
+                  setAge(Math.min(MAX_AGE, Math.max(MIN_AGE, Math.round(v))));
+              }}
               className="w-full rounded-lg border border-stone-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
+            <p className="mt-1 text-xs text-stone-400">
+              Ages {MIN_AGE}–{MAX_AGE}
+            </p>
           </div>
           <div>
             <label className="block text-sm font-semibold text-stone-700 mb-1">
@@ -146,9 +207,13 @@ export default function ProfileForm({
 
       {/* Health conditions */}
       <fieldset>
-        <legend className="text-sm font-semibold text-stone-700 mb-2">
+        <legend className="text-sm font-semibold text-stone-700 mb-1">
           Health conditions
         </legend>
+        <p className="text-xs text-stone-500 mb-2">
+          Within a category, the borderline and full versions are mutually
+          exclusive — choosing one replaces the other.
+        </p>
         <div className="grid gap-2 sm:grid-cols-2">
           {HEALTH_CONDITIONS.map((c) => {
             const active = healthConditions.includes(c.value);
@@ -156,9 +221,7 @@ export default function ProfileForm({
               <button
                 type="button"
                 key={c.value}
-                onClick={() =>
-                  setHealthConditions((prev) => toggle(prev, c.value))
-                }
+                onClick={() => toggleHealth(c.value)}
                 className={`text-left rounded-lg border px-3 py-2 text-sm transition-colors ${
                   active
                     ? "border-brand-500 bg-brand-50 text-brand-800"
@@ -182,34 +245,29 @@ export default function ProfileForm({
         </div>
       </fieldset>
 
-      {/* Dietary preferences with descriptions */}
+      {/* Dietary preferences: one base diet + optional free-from add-ons */}
       <fieldset>
-        <legend className="text-sm font-semibold text-stone-700 mb-2">
+        <legend className="text-sm font-semibold text-stone-700 mb-1">
           Dietary preferences
         </legend>
+        <p className="text-xs text-stone-500 mb-2">
+          Pick one base diet, then add any free-from restrictions.
+        </p>
+
+        <p className="text-xs font-semibold uppercase tracking-wide text-stone-400 mb-1">
+          Base diet — choose one
+        </p>
         <div className="grid gap-2 sm:grid-cols-2">
-          {DIETARY_PREFERENCES.map((d) => {
-            const active = dietaryPreferences.includes(d.value);
-            return (
-              <button
-                type="button"
-                key={d.value}
-                onClick={() =>
-                  setDietaryPreferences((prev) => toggle(prev, d.value))
-                }
-                className={`text-left rounded-lg border px-3 py-2 text-sm transition-colors ${
-                  active
-                    ? "border-brand-500 bg-brand-50 text-brand-800"
-                    : "border-stone-300 hover:bg-stone-50"
-                }`}
-              >
-                <span className="font-medium">{d.label}</span>
-                <span className="block text-xs text-stone-500 mt-0.5">
-                  {d.description}
-                </span>
-              </button>
-            );
-          })}
+          {DIETARY_PREFERENCES.filter((d) => d.group === "base").map(dietButton)}
+        </div>
+
+        <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-stone-400 mb-1">
+          Free-from — optional, combine any
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {DIETARY_PREFERENCES.filter((d) => d.group === "freefrom").map(
+            dietButton,
+          )}
         </div>
       </fieldset>
 
